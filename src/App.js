@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import Blog from './components/Blog'
 import Notification from './components/Notification'
+import Togglable from './components/Togglable'
+import BlogForm from './components/BlogForm'
 import blogService from './services/blogs'
 import loginService from './services/login'
 
@@ -11,12 +13,11 @@ const App = () => {
   const [user, setUser] = useState(null)
   const [message, setMessage] = useState(null)
   const [messageColor, setMessageColor] = useState('red')
-  const [newBlog, setNewBlog] = useState({title: '', author: '', url: ''})
 
   useEffect(() => {
     blogService.getAll().then(blogs =>
       setBlogs( blogs )
-    )  
+    )
   }, [])
 
   useEffect(() => {
@@ -30,18 +31,18 @@ const App = () => {
   const handleLogin = async (event) => {
     event.preventDefault()
     try{
-      const response = await loginService.login({username, password})
+      const response = await loginService.login({ username, password })
       console.log(response)
       setUser(response)
 
       blogService.setToken(response.token)
 
       window.localStorage.setItem('loggedUser', JSON.stringify(response))
-      
+
       setUsername('')
       setPassword('')
 
-      showNotification(`Logged succesfully ${response.name} in`, 'green')
+      showNotification(`Logged ${response.name} succesfully in`, 'green')
     }
     catch (exception) {
       document.getElementById('loginForm').reset()
@@ -59,24 +60,59 @@ const App = () => {
     showNotification(`Logged succesfully ${user.name} out`, 'green')
   }
 
-  const handleNewSubmit = async (event) => {
+  const handleNewSubmit = async (event, newBlog) => {
+    blogFormRef.current.toggleVisibility()
     event.preventDefault()
 
     blogService.setToken(user.token)
 
     const addedBlog = await blogService.createNew(newBlog)
 
-    setNewBlog({title: '', author: '', url: ''})
+    console.log(addedBlog)
 
-    if(addedBlog.error!==null){
+    if(addedBlog.error){
       return showNotification(addedBlog.error, 'red')
     }
 
-    setBlogs(blogs.concat(addedBlog))
-
     document.getElementById('newForm').reset()
 
+    setBlogs(blogs.concat(addedBlog))
+
     showNotification(`A new blog ${addedBlog.title} by ${addedBlog.author} added`, 'green')
+  }
+
+  const likeBlog = async (blog) => {
+    const likedBlog = await blogService.likeBlog(blog)
+
+    if(likedBlog.error){
+      return showNotification(likedBlog.error, 'red')
+    }
+
+    const index = blogs.findIndex((blogInList) => blogInList.id===likedBlog.id)
+
+    const tempBlogs = [...blogs]
+    tempBlogs[index]=likedBlog
+
+    console.log(tempBlogs)
+
+    setBlogs(tempBlogs)
+
+    showNotification(`Successfully liked ${likedBlog.title} by ${likedBlog.author}`, 'green')
+  }
+
+  const deleteBlog = async (blog) => {
+    blogService.setToken(user.token)
+    if(window.confirm(`Remove blog ${blog.title} by ${blog.author}`)){
+      const deletedBlog = await blogService.deleteBlog(blog)
+
+      if(deletedBlog===204){
+        showNotification(`Successfully deleted ${blog.title} by ${blog.author}`, 'green')
+      }
+
+      const tempBlogs = blogs.filter((blogInList) => blogInList.id!==blog.id)
+
+      setBlogs(tempBlogs)
+    }
   }
 
   const loginForm = () => (
@@ -85,17 +121,17 @@ const App = () => {
       <Notification message={message} color={messageColor} />
       <form id='loginForm' onSubmit={handleLogin}>
         <div>
-          username: <input type='text' onChange={({target}) => setUsername(target.value)} />
+          username: <input id='username' type='text' onChange={({ target }) => setUsername(target.value)} />
         </div>
         <div>
-          password: <input type='password' onChange={({target}) => setPassword(target.value)} />
+          password: <input id='password' type='password' onChange={({ target }) => setPassword(target.value)} />
         </div>
         <button type='submit'> login </button>
       </form>
     </div>
   )
 
-  const loggedInInfo = () =>(
+  const loggedInInfo = () => (
     <div>
       <h2>blogs</h2>
       <Notification message={message} color={messageColor} />
@@ -106,26 +142,24 @@ const App = () => {
     </div>
   )
 
+  const blogFormRef=React.createRef()
+
+
+
   const createNewForm = () => (
-    <form id='newForm' onSubmit={handleNewSubmit}>
-      <h2>create new</h2>
-      <div>
-        title: <input type='text' onChange={({target}) => setNewBlog({...newBlog, title: target.value})} />
-      </div>
-      <div>
-        author: <input type='text' onChange={({target}) => setNewBlog({...newBlog, author: target.value})} />
-      </div>
-      <div>
-        url: <input type='text' onChange={({target}) => setNewBlog({...newBlog, url: target.value})} />
-      </div>
-      <button type='submit'>create</button>
-    </form>
+    <Togglable button='new blog' ref={blogFormRef}>
+      <BlogForm handleSubmit={handleNewSubmit} />
+    </Togglable>
   )
 
   const showBlogs = () => (
     <div>
-      {blogs.map(blog =>
-        <Blog key={blog.id} blog={blog} />
+      {blogs.sort((a,b) => b.likes-a.likes).map(blog =>
+        <Blog
+          key={blog.id}
+          blog={blog}
+          likeBlog={likeBlog}
+          deleteBlog={blog.user.username===user.username ? deleteBlog : null} />
       )}
     </div>
   )
@@ -140,16 +174,16 @@ const App = () => {
 
   return (
     <div>
-      {user ? 
-      <div>
-        {loggedInInfo()}
-        {createNewForm()}
-        {showBlogs()}
-      </div>
-      :
-      <div>
-        {loginForm()}
-      </div>
+      {user ?
+        <div>
+          {loggedInInfo()}
+          {createNewForm()}
+          {showBlogs()}
+        </div>
+        :
+        <div>
+          {loginForm()}
+        </div>
       }
     </div>
   )
